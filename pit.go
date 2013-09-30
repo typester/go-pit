@@ -115,6 +115,7 @@ func Set(name string, data Profile) (err error) {
 	if err != nil {
 		return
 	}
+	tmpfile.Close()
 
 	err = os.Rename(tmpfile.Name(), pit.ProfileFile())
 	if err != nil {
