@@ -66,6 +66,7 @@ func edit(file string) error {
 
 	var stdin *os.File
 	var shell, shellcflag string
+	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
 		stdin, _ = os.Open("CONIN$")
 		shell = os.Getenv("COMSPEC")
@@ -73,15 +74,11 @@ func edit(file string) error {
 			shell = "cmd"
 		}
 		shellcflag = "/c"
+		cmd = exec.Command(shell, shellcflag, editor, file)
 	} else {
 		stdin = os.Stdin
-		shell = os.Getenv("SHELL")
-		if shell == "" {
-			shell = "sh"
-		}
-		shellcflag = "-c"
+		cmd = exec.Command(editor, file)
 	}
-	cmd := exec.Command(shell, shellcflag, editor, file)
 	cmd.Stdin = stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
