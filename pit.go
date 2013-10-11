@@ -78,7 +78,12 @@ func edit(file string) error {
 		cmd = exec.Command(shell, shellcflag, editor, file)
 	} else {
 		stdin = os.Stdin
-		cmd = exec.Command(editor, file)
+		shell = os.Getenv("SHELL")
+		if shell == "" {
+			shell = "/bin/sh"
+		}
+		shellcflag = "-c"
+		cmd = exec.Command(shell, shellcflag, editor+" "+file)
 	}
 	cmd.Stdin = stdin
 	cmd.Stdout = os.Stdout
