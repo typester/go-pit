@@ -2,6 +2,7 @@ package pit
 
 import (
 	"errors"
+	"io"
 	"io/ioutil"
 	"launchpad.net/goyaml"
 	"os"
@@ -83,6 +84,23 @@ func edit(file string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func copy(src, dst string) (err error) {
+	s, err := os.Open(src)
+	if err != nil {
+		return
+	}
+	defer s.Close()
+
+	d, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		return
+	}
+	defer d.Close()
+
+	_, err = io.Copy(d, s)
+	return
 }
 
 func Get(name string, requires Requires) (*Profile, error) {
@@ -227,7 +245,10 @@ func Set(name string, data Profile) error {
 
 	err = os.Rename(filename, profilefile)
 	if err != nil {
-		return err
+		err = copy(filename, profilefile)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
