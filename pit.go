@@ -1,12 +1,13 @@
 package pit
 
 import (
-	"fmt"
+	"errors"
 	"io/ioutil"
 	"launchpad.net/goyaml"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strings"
+	"runtime"
 )
 
 var (
@@ -16,8 +17,8 @@ var (
 `)
 )
 
-type Requires []string
 type Profile map[string]string
+type Requires Profile
 
 type Config struct {
 	Profile string
@@ -53,6 +54,40 @@ func newPit() (*pit, error) {
 	return pit, err
 }
 
+func edit(file string) error {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		if runtime.GOOS == "windows" {
+			editor = "notepad"
+		} else {
+			editor = "vim"
+		}
+	}
+
+	var stdin *os.File
+	var shell, shellcflag string
+	if runtime.GOOS == "windows" {
+		stdin, _ = os.Open("CONIN$")
+		shell = os.Getenv("COMSPEC")
+		if shell == "" {
+			shell = "cmd"
+		}
+		shellcflag = "/c"
+	} else {
+		stdin = os.Stdin
+		shell = os.Getenv("SHELL")
+		if shell == "" {
+			shell = "sh"
+		}
+		shellcflag = "-c"
+	}
+	cmd := exec.Command(shell, shellcflag, editor, file)
+	cmd.Stdin = stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 func Get(name string, requires Requires) (*Profile, error) {
 	pit, err := newPit()
 	if err != nil {
@@ -69,60 +104,136 @@ func Get(name string, requires Requires) (*Profile, error) {
 		profile = Profile{}
 	}
 
-	if len(requires) > 0 {
-		missing := []string{}
-
-		for i := range requires {
-			_, ok := profile[requires[i]]
-			if !ok {
-				missing = append(missing, requires[i])
+	if requires != nil && len(requires) > 0 {
+		missing := false
+		for k, v := range requires {
+			if _, ok := profile[k]; !ok {
+				profile[k] = v
+				missing = true
 			}
 		}
 
-		if len(missing) > 0 {
-			err = fmt.Errorf("missing configs: %s", strings.Join(missing, ", "))
-			return nil, err
+		if missing {
+			bytes, err := goyaml.Marshal(profile)
+			if err != nil {
+				return nil, err
+			}
+
+			tmpfile, err := ioutil.TempFile("", "")
+			if err != nil {
+				return nil, err
+			}
+			tmpfile.Close()
+			defer os.Remove(tmpfile.Name())
+
+			filename := tmpfile.Name()
+
+			err = ioutil.WriteFile(filename, bytes, 0600)
+			if err != nil {
+				return nil, err
+			}
+
+			fi, err := os.Stat(filename)
+			if err != nil {
+				return nil, err
+			}
+
+			modtime := fi.ModTime()
+
+			err = edit(filename)
+			if err != nil {
+				return nil, err
+			}
+
+			fi, err = os.Stat(filename)
+			if err != nil {
+				return nil, err
+			}
+
+			if modtime == fi.ModTime() {
+				return nil, errors.New("No changes.")
+			}
+
+			bytes, err = ioutil.ReadFile(filename)
+			if err != nil {
+				return nil, err
+			}
+			err = goyaml.Unmarshal(bytes, &profiles)
+			if err != nil {
+				return nil, err
+			}
+			err = Set(name, profile)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	return &profile, nil
 }
 
-func Set(name string, data Profile) (err error) {
+func Set(name string, data Profile) error {
 	pit, err := newPit()
 	if err != nil {
-		return
+		return err
 	}
 
 	profiles, err := pit.ReadProfiles()
 	if err != nil {
-		return
+		return err
 	}
 
 	(*profiles)[name] = data
 
 	bytes, err := goyaml.Marshal(profiles)
 	if err != nil {
-		return
+		return err
 	}
 
 	tmpfile, err := ioutil.TempFile("", "")
 	if err != nil {
-		return
+		return err
 	}
 
 	err = ioutil.WriteFile(tmpfile.Name(), bytes, 0644)
 	if err != nil {
-		return
+		return err
 	}
 	tmpfile.Close()
 
-	err = os.Rename(tmpfile.Name(), pit.ProfileFile())
+	filename := tmpfile.Name()
+
+	_, err = os.Stat(directory)
 	if err != nil {
-		return
+		err = os.Mkdir(directory, 0700)
+		if err != nil {
+			return err
+		}
 	}
 
-	return
+	_, err = os.Stat(directory)
+	if err != nil {
+		err = os.Mkdir(directory, 0700)
+		if err != nil {
+			return err
+		}
+	}
+
+	profilefile := pit.ProfileFile()
+
+	if _, err = os.Stat(profilefile); err == nil {
+		err = os.Remove(profilefile)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = os.Rename(filename, profilefile)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (pit *pit) ProfileFile() string {
@@ -130,14 +241,12 @@ func (pit *pit) ProfileFile() string {
 }
 
 func (pit *pit) ReadProfiles() (*map[string]Profile, error) {
-	var profiles map[string]Profile
+	profiles := map[string]Profile{}
 
 	profileFile := pit.ProfileFile()
 	bytes, err := ioutil.ReadFile(profileFile)
 	if err != nil {
-		if os.IsNotExist(err) {
-			profiles = map[string]Profile{}
-		} else {
+		if !os.IsNotExist(err) {
 			return nil, err
 		}
 	} else {

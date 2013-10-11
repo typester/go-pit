@@ -4,6 +4,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -110,25 +111,28 @@ func TestRequireCheck(t *testing.T) {
 	_, reset := MockDir()
 	defer reset()
 
-	_, err := Get("example.com", Requires{"username"})
+	os.Setenv("EDITOR", "asdfasdf")
+
+	_, err := Get("example.com", Requires{"username": "username on example.com"})
 	if err == nil {
 		t.Error("Get should be fail")
 		return
 	}
 
-	if err.Error() != "missing configs: username" {
-		t.Error("error is wrong")
-		return
+	if runtime.GOOS == "windows" {
+		os.Setenv("EDITOR", "type")
+	} else {
+		os.Setenv("EDITOR", "cat")
 	}
 
-	_, err = Get("example.com", Requires{"username", "password"})
+	_, err = Get("example.com", Requires{"username": "username on example.com", "password": "password on example.com"})
 	if err == nil {
 		t.Error("Get should be fail")
 		return
 	}
 
-	if err.Error() != "missing configs: username, password" {
-		t.Error("error is wrong")
+	if err.Error() != "No changes." {
+		t.Error("error is wrong. got:", err.Error())
 		return
 	}
 
@@ -137,17 +141,6 @@ func TestRequireCheck(t *testing.T) {
 	})
 	if err != nil {
 		t.Error("Set fail")
-		return
-	}
-
-	_, err = Get("example.com", Requires{"username", "password"})
-	if err == nil {
-		t.Error("Get should be fail")
-		return
-	}
-
-	if err.Error() != "missing configs: password" {
-		t.Error("error is wrong")
 		return
 	}
 }
