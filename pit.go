@@ -178,7 +178,7 @@ func Get(name string, requires Requires) (*Profile, error) {
 			if err != nil {
 				return nil, err
 			}
-			err = goyaml.Unmarshal(bytes, &profiles)
+			err = goyaml.Unmarshal(bytes, &profile)
 			if err != nil {
 				return nil, err
 			}
