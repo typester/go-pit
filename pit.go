@@ -4,11 +4,12 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
-	"launchpad.net/goyaml"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	goyaml "gopkg.in/yaml.v1"
 )
 
 var (
